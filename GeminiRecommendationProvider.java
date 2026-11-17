@@ -9,12 +9,12 @@ import java.util.List;
 /**
  * Same job as AiRecommendationProvider but calls the Google Gemini API (free tier available).
  *  - API key is read from the GEMINI_API_KEY environment variable (Replit Secrets).
- *  - Model can be changed with GEMINI_MODEL (default: gemini-2.5-flash).
+ *  - Model can be changed with GEMINI_MODEL (default: gemini-3.8-flash).
  *  - Any failure becomes a RecommendationException so the fallback takes over.
  */
 public class GeminiRecommendationProvider implements RecommendationProvider {
     private static final String BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
-    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration TIMEOUT = Duration.ofSeconds(20);
 
     private final String apiKey;
     private final String model;
@@ -22,7 +22,7 @@ public class GeminiRecommendationProvider implements RecommendationProvider {
 
     public GeminiRecommendationProvider() {
         this(System.getenv("GEMINI_API_KEY"),
-             System.getenv().getOrDefault("GEMINI_MODEL", "gemini-2.5-flash"));
+             System.getenv().getOrDefault("GEMINI_MODEL", "gemini-3.8-flash"));
     }
 
     public GeminiRecommendationProvider(String apiKey, String model) {
@@ -46,7 +46,12 @@ public class GeminiRecommendationProvider implements RecommendationProvider {
                         buildRequestJson(AiRecommendationProvider.buildPrompt(cartItems))))
                 .build();
         try {
+            // one automatic retry when the model is busy (HTTP 503) or rate-limited (HTTP 429)
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 503 || response.statusCode() == 429) {
+                Thread.sleep(1500);
+                response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            }
             if (response.statusCode() != 200) {
                 String body = response.body() == null ? "" : response.body().replaceAll("\\s+", " ");
                 throw new RecommendationException("Gemini API returned HTTP " + response.statusCode()
